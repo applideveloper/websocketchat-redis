@@ -1,18 +1,27 @@
 package models
 
-import akka.actor._
-import scala.concurrent.duration._
+import akka.actor.ActorRef
+import akka.actor.Actor
+import akka.actor.Props
+import scala.concurrent.duration.DurationInt
 
-import play.api._
-import play.api.libs.json._
-import play.api.libs.iteratee._
-import play.api.libs.concurrent._
+import play.api.Logger
+import play.api.libs.json.Json
+import play.api.libs.json.JsValue
+import play.api.libs.json.JsObject
+import play.api.libs.json.JsString
+import play.api.libs.iteratee.Iteratee
+import play.api.libs.iteratee.Enumerator
+import play.api.libs.iteratee.Done
+import play.api.libs.iteratee.Input
+import play.api.libs.iteratee.Concurrent
+import play.api.libs.concurrent.Akka
 
 import akka.util.Timeout
 import akka.pattern.ask
 
 import play.api.Play.current
-import play.api.libs.concurrent.Execution.Implicits._
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import controllers.RedisClients
 
@@ -125,6 +134,7 @@ class ChatRoom extends Actor {
     case Quit(username) => {
       members = members - username
       notifyAll("quit", username, "has left the room")
+      sub.unsub("demo-channel")
     }
     
   }

@@ -2,16 +2,24 @@ package models
 
 import akka.actor.{ ActorSystem, Props }
 
-import play.api.libs.iteratee._
-import play.api.libs.json._
+import play.api.libs.iteratee.Concurrent
+import play.api.libs.json.JsValue
+import play.api.libs.json.Json
 
-import com.redis._
-import serialization._
+import com.redis.RedisClient
+import com.redis.Publisher
+import com.redis.Publish
+import com.redis.Subscriber
+import com.redis.Register
+import com.redis.Subscribe
+import com.redis.Unsubscribe
+import com.redis.{ PubSubMessage, S, U, M, E}
 
 class Pub {
 
   val system = ActorSystem("pub")
-  val r = new RedisClient("localhost", 6377)
+  val r = new RedisClient("pub-redis-16250.us-east-1-4.1.ec2.garantiadata.com", 16250)
+  r.auth("zjrHNbY3fmckdgUs")
   val p = system.actorOf(Props(new Publisher(r)))
 
   private def publish(channel: String, message: String) = {
@@ -28,7 +36,8 @@ class Sub(pChannel: Concurrent.Channel[JsValue]) {
 // to = type returned
 
   val system = ActorSystem("sub")
-  val r = new RedisClient("localhost", 6377)
+  val r = new RedisClient("pub-redis-16250.us-east-1-4.1.ec2.garantiadata.com", 16250)
+  r.auth("zjrHNbY3fmckdgUs")
   val s = system.actorOf(Props(new Subscriber(r)))
   s ! Register(callback) 
 
@@ -45,6 +54,7 @@ class Sub(pChannel: Concurrent.Channel[JsValue]) {
     case S(channel, no) => println("subscribed to " + channel + " and count = " + no)
     case U(channel, no) => println("unsubscribed from " + channel + " and count = " + no)
     case M(channel, msg) => 
+println("msg: " + msg)
       msg match {
         // exit will unsubscribe from all channels and stop subscription service
         case "exit" => 
