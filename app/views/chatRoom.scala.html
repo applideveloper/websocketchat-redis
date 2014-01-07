@@ -1,9 +1,10 @@
-@(username: String)(implicit request: RequestHeader)
+@(room: String, username: String)(implicit request: RequestHeader)
 
-@main(Some(username)) {
+@main(room, Some(username)) {
     
     <div class="page-header">
-        <h1>Welcome to the chat room <small>You are chatting as @username</small></h1>
+        <h1>Welcome to the chat room @room</h1>
+        You are chatting as @username
     </div>
     
     <div id="onError" class="alert-message error">
@@ -30,7 +31,7 @@
         $(function() {
             
 			var WS = window['MozWebSocket'] ? MozWebSocket : WebSocket
-            var chatSocket = new WS("@routes.Application.chat(username).webSocketURL()")
+            var chatSocket = new WS("@routes.Application.chat(room, username).webSocketURL()")
             
             var sendMessage = function() {
                 chatSocket.send(JSON.stringify(

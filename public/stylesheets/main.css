@@ -53,8 +53,10 @@ body {
     color: #888;
 }
 
-#username {
-    width: 200px;
+.topbar span {
+    color: #FFF;
+    padding-left: 10px;
+    padding-right: 5px;
 }
 
 #main {

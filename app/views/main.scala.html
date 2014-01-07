@@ -1,4 +1,4 @@
-@(connected: Option[String])(content: Html)
+@(room: String, connected: Option[String])(content: Html)
 
 <!DOCTYPE html>
 
@@ -24,7 +24,8 @@
                         </p>
                     }.getOrElse {
                         <form action="@routes.Application.chatRoom()" class="pull-right">
-                            <input id="username" name="username" class="input-small" type="text" placeholder="Username">
+                            <span>Room </span><input id="room" name="room" class="input-small" type="text" value="@room">
+                            <span>User </span><input id="username" name="username" class="input-small" type="text">
                             <button class="btn" type="submit">Sign in</button>
                         </form>
                     }

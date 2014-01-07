@@ -1,6 +1,6 @@
 @()(implicit flash: Flash)
 
-@main(None) {
+@main("Room1", None) {
     
     @flash.get("error").map { errorMessage =>
         
