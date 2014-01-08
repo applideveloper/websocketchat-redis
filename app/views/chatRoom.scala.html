@@ -33,9 +33,16 @@
 			var WS = window['MozWebSocket'] ? MozWebSocket : WebSocket
             var chatSocket = new WS("@routes.Application.chat(room, username).webSocketURL()")
             
+            chatSocket.onopen = function(evt) {
+				console.log("open")
+            chatSocket.send(JSON.stringify(
+                { "text": "Hello!"}
+            ))
+			}
+            
             var sendMessage = function() {
                 chatSocket.send(JSON.stringify(
-                    {text: $("#talk").val()}
+                    { "text": $("#talk").val()}
                 ))
                 $("#talk").val('')
             }
@@ -78,7 +85,6 @@
             $("#talk").keypress(handleReturnKey)  
             
             chatSocket.onmessage = receiveEvent
-            
         })
     
     </script>
