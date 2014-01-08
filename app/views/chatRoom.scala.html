@@ -72,21 +72,23 @@ $(function() {
 	}
 	function openEvent(evt) {
 console.log("open");
+		retryCount = 0;
 		chatSocket.send(JSON.stringify({ "system": "connected"}));
-	}
-	function errorEvent(evt) {
-console.log("error");
-		chatSocket = createWebSocket(false);
 	}
 	function closeEvent(evt) {
 console.log("close");
-		chatSocket = createWebSocket(false);
+		retryCount++;
+		if (retryCount > 5) {
+			$("#onError span").text("Connection interrupted!")
+			$("#onError").show()
+		} else {
+			chatSocket = createWebSocket(false);
+		}
 	}
 	function createWebSocket(initial) {
 		var ret = new WebSocket(uri);
 		ret.onopen = openEvent;
 		ret.onmessage = receiveEvent;
-//		ret.onerror = errorEvent;
 		ret.onclose = closeEvent;
 		return ret;
 	}
@@ -94,6 +96,7 @@ console.log("close");
 	$("#talk").keypress(handleReturnKey)  
 	
 	var uri = "@routes.Application.chat(room, username).webSocketURL()",
+		retryCount = 0;
 		chatSocket = createWebSocket(true);
 })
 
