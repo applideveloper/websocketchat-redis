@@ -27,10 +27,10 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 object MyRedisService extends RedisService(Play.configuration.getString("redis.uri").get)
 
 class ChatRoom(name: String, redis: RedisService) {
-  var members = List.empty[String]
   val channel = redis.createPubSub(name, receive=this.receive)
   
   private val member_key = name + "-members"
+  var members = getMembers
   
   private var closed = false
   def active = !closed
@@ -43,6 +43,10 @@ class ChatRoom(name: String, redis: RedisService) {
     val msg = new Message(kind, user, message, "Robot" :: members)
     Json.stringify(messageWrites.writes(msg))
   }
+  
+  private def getMembers = redis.withClient {
+    _.lrange(member_key, 0, -1).map(_.flatten).getOrElse(Nil)
+  }
     
   def join(username: String): (Iteratee[String,_], Enumerator[String]) = {
     if (username == "Robot" || members.contains(username)) {
@@ -54,7 +58,16 @@ class ChatRoom(name: String, redis: RedisService) {
       channel.send(msg)
       val in = Iteratee.foreach[String] { msg =>
         val json = Json.parse(msg)
-        channel.send(message("talk", username, (json \ "text").as[String]))
+        (json \ "text") match {
+          case JsString(x) => 
+            channel.send(message("talk", username, x))
+          case _ =>
+        }
+        (json \ "system") match {
+          case JsString(x) => 
+            Logger.info("system: " + username + " " + x)
+          case _ =>
+        }
       }.map { _ =>
         redis.withClient(_.lrem(member_key, 1, username))
         channel.send(message("quit", username, "has left the room"))
@@ -70,12 +83,10 @@ class ChatRoom(name: String, redis: RedisService) {
     val str = (obj \ "message").as[String]
     kind match {
       case s if (s == "join" || s == "quit") =>
-        redis.withClient(_.lrange(member_key, 0, -1)).foreach { l =>
-          members = l.flatten
-          if (members.isEmpty) {
-            closed = true
-            channel.close
-          }
+        members = getMembers
+        if (members.isEmpty) {
+          closed = true
+          channel.close
         }
         message(kind, user, str)
       case _ =>
