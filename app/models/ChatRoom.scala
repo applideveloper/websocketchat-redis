@@ -48,9 +48,7 @@ class ChatRoom(name: String, redis: RedisService) {
     if (username == "Robot" || members.contains(username)) {
       ChatRoom.error("This username is already used")
     } else {
-println("join1: " + username)
       redis.withClient(_.rpush(member_key, username))
-println("join22: " + username)
       members = username :: members
       val msg = message("join", username, "has entered the room")
       channel.send(msg)
@@ -73,7 +71,6 @@ println("join22: " + username)
     kind match {
       case s if (s == "join" || s == "quit") =>
         redis.withClient(_.lrange(member_key, 0, -1)).foreach { l =>
-          println("lrange: " + l)
           members = l.flatten
           if (members.isEmpty) {
             closed = true

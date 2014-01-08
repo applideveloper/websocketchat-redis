@@ -40,7 +40,7 @@ object Application extends Controller {
     try {
       ChatRoom.get(room).join(username)
     } catch {
-      case e =>
+      case e: Exception =>
         e.printStackTrace
         ChatRoom.error(e.getMessage)
     }
