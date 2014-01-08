@@ -3,13 +3,6 @@ package models
 import java.io.OutputStream
 import com.redis.RedisClient
 import com.redis.RedisClientPool
-import com.redis.RedisCommand
-import com.redis.Publisher
-import com.redis.Subscriber
-import com.redis.Register
-import com.redis.Subscribe
-import com.redis.Unsubscribe
-import com.redis.Publish
 import com.redis.{ PubSubMessage, S, U, M, E}
 import play.api.Play
 import play.api.Play.current
@@ -18,11 +11,12 @@ import play.api.libs.iteratee.Iteratee
 import play.api.libs.iteratee.Concurrent
 import play.api.libs.concurrent.Akka
 import akka.actor.Props
+import akka.actor.Actor
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-class RedisService(redisUrl: String) extends RedisCommand {
-  val (host, port, pool) = {
+class RedisService(redisUrl: String) {
+  private val (host, port, pool) = {
     val uri = new java.net.URI(redisUrl)
     val host = uri.getHost
     val port = uri.getPort
@@ -32,11 +26,12 @@ class RedisService(redisUrl: String) extends RedisCommand {
     (host, port, pool)
   }
   
-  override def write_to_socket(data: Array[Byte])(op: OutputStream => Unit) = pool.withClient(_.write_to_socket(data)(op))
-  override def write(data: Array[Byte]) = pool.withClient(_.write(data))
-  override def readLine: Array[Byte] = pool.withClient(_.readLine)
-  override def readCounted(count: Int): Array[Byte] = pool.withClient(_.readCounted(count))
-
+  def withClient[T](body: RedisClient => T) = pool.withClient(body)
+  def borrowClient = pool.pool.borrowObject
+  def returnClient(client: RedisClient) = pool.pool.returnObject(client)
+  
+  def close = pool.close
+  
   def createPubSub(channel: String,
     send: String => String = null,
     receive: String => String = null,
@@ -48,9 +43,6 @@ class RedisService(redisUrl: String) extends RedisCommand {
     Option(send), Option(receive), Option(() => disconnect), 
     Option(exception), Option(subscribe), Option(unsubscribe)
   )
-  
-  def borrowClient = pool.pool.borrowObject
-  def returnClient(client: RedisClient) = pool.pool.returnObject(client)
   
   private def defaultException: Throwable => Unit = { ex =>
     Logger.error("Fatal error caused consumer dead. Please init new consumer reconnecting to master or connect to backup", ex)
@@ -78,16 +70,12 @@ class PubSubChannel(redis: RedisService, channel: String,
   unsubscribe: Option[(String, Int) => Unit] = None
   ) {
   
-  private val pClient = redis.borrowClient
-  private val sClient = redis.borrowClient
-  
   private val (msgEnumerator, msgChannel) = Concurrent.broadcast[String]
-  private val pub = Akka.system.actorOf(Props(new Publisher(pClient)))
+  private val pub = Akka.system.actorOf(Props(new Publisher()))
   private val sub = {
-    val ret = Akka.system.actorOf(Props(new Subscriber(sClient)))
-    ret ! Register(callback)
-    ret ! Subscribe(Array(channel))
-    ret
+    val client = redis.borrowClient
+    client.subscribe(channel)(callback)
+    client
   }
   
   lazy val in = Iteratee.foreach[String] { msg =>
@@ -110,6 +98,9 @@ class PubSubChannel(redis: RedisService, channel: String,
       subscribe.foreach(_(channel, no))
     case U(channel, no) => 
       unsubscribe.foreach(_(channel, no))
+      if (no == 0) {
+        sub.pubSub = false
+      }
     case M(channel, msg) => 
       Logger.debug("receive: " + msg)
       val str = receive.map(_(msg)).getOrElse(msg)
@@ -118,15 +109,21 @@ class PubSubChannel(redis: RedisService, channel: String,
   
   def send(msg: String) = {
     Logger.debug("send: " + msg)
-    pub ! Publish(channel, msg)
+    pub ! msg
   }
   
   def close = {
     Logger.info("close: " + channel)
-    sub ! Unsubscribe(Array(channel))
-    redis.returnClient(pClient)
-    redis.returnClient(sClient)
+    sub.unsubscribe(channel)
+    redis.returnClient(sub)
   }
-
+  
+  class Publisher extends Actor {
+    def receive = {
+      case msg: String =>
+        redis.withClient { _.publish(channel, msg)}
+        sender ! true
+    }
+  }
 }
 

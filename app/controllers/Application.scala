@@ -37,7 +37,17 @@ object Application extends Controller {
    * Handles the chat websocket.
    */
   def chat(room: String, username: String) = WebSocket.using[String] { request  =>
-    ChatRoom.get(room).join(username)
+    try {
+      ChatRoom.get(room).join(username)
+    } catch {
+      case e =>
+        e.printStackTrace
+        ChatRoom.error(e.getMessage)
+    }
   }
   
+  def gc = Action {
+    System.gc
+    Ok("OK")
+  }
 }

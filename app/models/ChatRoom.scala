@@ -27,8 +27,10 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 object MyRedisService extends RedisService(Play.configuration.getString("redis.uri").get)
 
 class ChatRoom(name: String, redis: RedisService) {
-  var members = Set.empty[String]
+  var members = List.empty[String]
   val channel = redis.createPubSub(name, receive=this.receive)
+  
+  private val member_key = name + "-members"
   
   private var closed = false
   def active = !closed
@@ -38,25 +40,25 @@ class ChatRoom(name: String, redis: RedisService) {
   implicit val messageWrites = Json.writes[Message]
   
   private def message(kind: String, user: String, message: String): String = {
-    val msg = new Message(kind, user, message, "Robot" :: members.toList)
+    val msg = new Message(kind, user, message, "Robot" :: members)
     Json.stringify(messageWrites.writes(msg))
   }
     
   def join(username: String): (Iteratee[String,_], Enumerator[String]) = {
     if (username == "Robot" || members.contains(username)) {
-      val iteratee = Done[String,Unit]((),Input.EOF)
-      val enumerator =  Enumerator[String](JsObject(Seq("error" -> JsString("This username is already used"))).toString).andThen(Enumerator.enumInput(Input.EOF))
-      (iteratee,enumerator)
+      ChatRoom.error("This username is already used")
     } else {
-      redis.rpush(name + "-members", username)
-      members = members + username
+println("join1: " + username)
+      redis.withClient(_.rpush(member_key, username))
+println("join22: " + username)
+      members = username :: members
       val msg = message("join", username, "has entered the room")
       channel.send(msg)
       val in = Iteratee.foreach[String] { msg =>
         val json = Json.parse(msg)
         channel.send(message("talk", username, (json \ "text").as[String]))
       }.map { _ =>
-        redis.lrem(name + "-members", 1, username)
+        redis.withClient(_.lrem(member_key, 1, username))
         channel.send(message("quit", username, "has left the room"))
       }
       (in, channel.out)
@@ -70,9 +72,13 @@ class ChatRoom(name: String, redis: RedisService) {
     val str = (obj \ "message").as[String]
     kind match {
       case s if (s == "join" || s == "quit") =>
-        redis.lrange(name + "-members", 0, -1).foreach { l =>
+        redis.withClient(_.lrange(member_key, 0, -1)).foreach { l =>
           println("lrange: " + l)
-          members = l.filter(_.isDefined).map(_.get).toSet
+          members = l.flatten
+          if (members.isEmpty) {
+            closed = true
+            channel.close
+          }
         }
         message(kind, user, str)
       case _ =>
@@ -101,4 +107,11 @@ object ChatRoom {
         ret
     }
   }
+  
+  def error(msg: String): (Iteratee[String,_], Enumerator[String]) = {
+    val in = Done[String,Unit]((),Input.EOF)
+    val out =  Enumerator[String](JsObject(Seq("error" -> JsString(msg))).toString).andThen(Enumerator.enumInput(Input.EOF))
+    (in, out)
+  }
 }
+
