@@ -35,9 +35,6 @@
             
             chatSocket.onopen = function(evt) {
 				console.log("open")
-            chatSocket.send(JSON.stringify(
-                { "text": "Hello!"}
-            ))
 			}
             
             var sendMessage = function() {
