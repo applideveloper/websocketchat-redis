@@ -86,6 +86,7 @@ console.log("close");
 		}
 	}
 	function createWebSocket(initial) {
+		var uri = initial ? chatUri : retryUri
 		var ret = new WebSocket(uri);
 		ret.onopen = openEvent;
 		ret.onmessage = receiveEvent;
@@ -95,7 +96,8 @@ console.log("close");
 	
 	$("#talk").keypress(handleReturnKey)  
 	
-	var uri = "@routes.Application.chat(room, username).webSocketURL()",
+	var chatUri = "@routes.Application.chat(room, username).webSocketURL()",
+		retryUri = "@routes.Application.reconnect(room, username).webSocketURL()",
 		retryCount = 0;
 		chatSocket = createWebSocket(true);
 })

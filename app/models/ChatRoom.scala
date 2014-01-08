@@ -47,6 +47,25 @@ class ChatRoom(name: String, redis: RedisService) {
   private def getMembers = redis.withClient {
     _.lrange(member_key, 0, -1).map(_.flatten).getOrElse(Nil)
   }
+  
+  private def createIteratee(username: String): Iteratee[String, _] = {
+    Iteratee.foreach[String] { msg =>
+      val json = Json.parse(msg)
+      (json \ "text") match {
+        case JsString(x) => 
+          channel.send(message("talk", username, x))
+        case _ =>
+      }
+      (json \ "system") match {
+        case JsString(x) => 
+          Logger.info("system: " + username + " " + x)
+        case _ =>
+      }
+    }.map { _ =>
+      redis.withClient(_.lrem(member_key, 1, username))
+      channel.send(message("quit", username, "has left the room"))
+    }
+  }
     
   def join(username: String): (Iteratee[String,_], Enumerator[String]) = {
     if (username == "Robot" || members.contains(username)) {
@@ -56,24 +75,19 @@ class ChatRoom(name: String, redis: RedisService) {
       members = username :: members
       val msg = message("join", username, "has entered the room")
       channel.send(msg)
-      val in = Iteratee.foreach[String] { msg =>
-        val json = Json.parse(msg)
-        (json \ "text") match {
-          case JsString(x) => 
-            channel.send(message("talk", username, x))
-          case _ =>
-        }
-        (json \ "system") match {
-          case JsString(x) => 
-            Logger.info("system: " + username + " " + x)
-          case _ =>
-        }
-      }.map { _ =>
-        redis.withClient(_.lrem(member_key, 1, username))
-        channel.send(message("quit", username, "has left the room"))
-      }
+      val in = createIteratee(username)
       (in, channel.out)
     }
+  }
+  
+  def reconnect(username: String): (Iteratee[String,_], Enumerator[String]) = {
+    Logger.info("Reconnect: " + username)
+    if (!members.contains(username)) {
+      redis.withClient(_.rpush(member_key, username))
+      members = username :: members
+    }
+    val in = createIteratee(username)
+    (in, channel.out)
   }
   
   def receive(msg: String): String = {

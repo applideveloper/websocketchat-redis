@@ -46,6 +46,16 @@ object Application extends Controller {
     }
   }
   
+  def reconnect(room: String, username: String) = WebSocket.using[String] { request  =>
+    try {
+      ChatRoom.get(room).reconnect(username)
+    } catch {
+      case e: Exception =>
+        e.printStackTrace
+        ChatRoom.error(e.getMessage)
+    }
+  }
+  
   def gc = Action {
     System.gc
     Ok("OK")

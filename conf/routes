@@ -6,6 +6,7 @@
 GET     /                           controllers.Application.index
 GET     /room                       controllers.Application.chatRoom(room: String ?= "Room1", username: Option[String] ?= None)
 GET     /room/chat                  controllers.Application.chat(room, username)
+GET     /room/reconnect             controllers.Application.reconnect(room, username)
 GET     /gc                         controllers.Application.gc
 
 # Map static resources from the /public folder to the /assets URL path
