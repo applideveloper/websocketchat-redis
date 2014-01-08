@@ -74,11 +74,9 @@
             $("#talk").keypress(handleReturnKey)  
             
             var chatSocket = new WebSocket("@routes.Application.chat(room, username).webSocketURL()")
-            
             chatSocket.onopen = function(evt) {
-				console.log("open")
+				chatSocket.send(JSON.stringify({ "text": "Hello!"}));
 			}
-            
             chatSocket.onmessage = receiveEvent
         })
     
