@@ -29,14 +29,6 @@
     <script type="text/javascript" charset="utf-8">
     
         $(function() {
-            
-			var WS = window['MozWebSocket'] ? MozWebSocket : WebSocket
-            var chatSocket = new WS("@routes.Application.chat(room, username).webSocketURL()")
-            
-            chatSocket.onopen = function(evt) {
-				console.log("open")
-			}
-            
             var sendMessage = function() {
                 chatSocket.send(JSON.stringify(
                     { "text": $("#talk").val()}
@@ -80,6 +72,12 @@
             }
             
             $("#talk").keypress(handleReturnKey)  
+            
+            var chatSocket = new WebSocket("@routes.Application.chat(room, username).webSocketURL()")
+            
+            chatSocket.onopen = function(evt) {
+				console.log("open")
+			}
             
             chatSocket.onmessage = receiveEvent
         })
