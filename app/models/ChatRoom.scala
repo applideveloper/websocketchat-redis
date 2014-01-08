@@ -10,6 +10,8 @@ import play.api.libs.json.Json
 import play.api.libs.json.JsValue
 import play.api.libs.json.JsObject
 import play.api.libs.json.JsString
+import play.api.libs.json.JsSuccess
+import play.api.libs.json.JsError
 import play.api.libs.iteratee.Iteratee
 import play.api.libs.iteratee.Enumerator
 import play.api.libs.iteratee.Done
@@ -30,18 +32,17 @@ class ChatRoom(name: String, redis: RedisService) {
   val channel = redis.createPubSub(name, receive=this.receive)
   
   private val member_key = name + "-members"
-  var members = getMembers
+  var members: List[String] = getMembers
   
   private var closed = false
   def active = !closed
   
   case class Message(kind: String, user: String, message: String, members: List[String])
-  implicit val messageReads = Json.reads[Message]
-  implicit val messageWrites = Json.writes[Message]
+  implicit val messageFormat = Json.format[Message]
   
   private def message(kind: String, user: String, message: String): String = {
     val msg = new Message(kind, user, message, "Robot" :: members)
-    Json.stringify(messageWrites.writes(msg))
+    Json.toJson(msg).toString
   }
   
   private def getMembers = redis.withClient {
@@ -91,19 +92,21 @@ class ChatRoom(name: String, redis: RedisService) {
   }
   
   def receive(msg: String): String = {
-    val obj = Json.parse(msg)
-    val kind = (obj \ "kind").as[String]
-    val user = (obj \ "user").as[String]
-    val str = (obj \ "message").as[String]
-    kind match {
-      case s if (s == "join" || s == "quit") =>
-        members = getMembers
-        if (members.isEmpty) {
-          closed = true
-          channel.close
+    Json.fromJson[Message](Json.parse(msg)) match {
+      case JsSuccess(obj, _) =>
+        obj.kind match {
+          case s if (s == "join" || s == "quit") =>
+            members = getMembers
+            if (members.isEmpty) {
+              closed = true
+              channel.close
+            }
+            message(obj.kind, obj.user, obj.message)
+          case _ =>
+            msg
         }
-        message(kind, user, str)
-      case _ =>
+      case JsError(errors) =>
+        Logger.error("Message error: " + errors)
         msg
     }
   }
