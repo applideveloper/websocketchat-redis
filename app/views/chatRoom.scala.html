@@ -55,6 +55,7 @@ $(function() {
 		
 		// Handle errors
 		if(data.error) {
+			chatSocket.onclose = null;
 			chatSocket.close()
 			$("#onError span").text(data.error)
 			$("#onError").show()
@@ -112,7 +113,12 @@ $(function() {
 		return ret;
 	}
 	
-	$("#talk").keypress(handleReturnKey)  
+	$("#talk").keypress(handleReturnKey);
+	window.onunload = function() {
+		if (chatSocket) {
+			chatSocket.onclose = null;
+		}
+	}
 	
 	var retryCount = 0,
 		msgCount = 0,
