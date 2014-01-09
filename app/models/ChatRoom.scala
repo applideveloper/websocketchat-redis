@@ -62,7 +62,11 @@ class ChatRoom(name: String, redis: RedisService) {
   }
     
   def join(username: String): (Iteratee[String,_], Enumerator[String]) = {
-    if (username == "Robot" || getMembers.contains(username)) {
+    val members = getMembers
+    if (username == "Robot" || members.contains(username)) {
+      if (members.isEmpty || local_members.isEmpty) {
+        close
+      }
       ChatRoom.error("This username is already used")
     } else {
       Logger.info("Join: " + username)
@@ -94,8 +98,7 @@ class ChatRoom(name: String, redis: RedisService) {
               removeLocalMember(obj.user)
             }
             if (members.isEmpty || local_members.isEmpty) {
-              closed = true
-              channel.close
+              close
             }
             message(obj.kind, obj.user, obj.message, Some("Robot" :: members))
           case _ =>
@@ -105,6 +108,11 @@ class ChatRoom(name: String, redis: RedisService) {
         Logger.error("Message error: " + errors)
         msg
     }
+  }
+  
+  private def close = {
+    closed = true
+    channel.close
   }
   
   Akka.system.scheduler.schedule(25 seconds, 25 seconds) {

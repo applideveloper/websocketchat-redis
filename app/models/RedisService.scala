@@ -20,8 +20,11 @@ class RedisService(redisUrl: String) {
     val uri = new java.net.URI(redisUrl)
     val host = uri.getHost
     val port = uri.getPort
-    val secret = uri.getUserInfo.split(":")(1)
-    val pool = new RedisClientPool(host, port, secret=Some(secret))
+    val secret = uri.getUserInfo.split(":").toList match {
+      case username :: password :: Nil => Some(password)
+      case _ => None
+    }
+    val pool = new RedisClientPool(host, port, secret=secret)
     Logger.info(s"Redis host: $host, Redis port: $port")
     (host, port, pool)
   }
