@@ -86,17 +86,22 @@ $(function() {
 		} 
 	}
 	function openEvent(evt) {
+		console.log("open: " + retryCount)
 		retryCount = 0;
 		chatSocket.send(JSON.stringify(new Message("join", "has entered the room")));
 	}
 	function closeEvent(evt) {
-		retryCount++;
-		if (retryCount > 5) {
+		console.log("close: " + retryCount)
+		if (retryCount > MAX_RETRY_COUNT) {
 			$("#onError span").text("Connection interrupted!")
 			$("#onError").show()
 		} else {
-			chatSocket = createWebSocket(false);
+			var next = RETRY_INTERVAL_BASE * retryCount * 1000;
+			setTimeout(function() {
+				chatSocket = createWebSocket(false);
+			}, next)
 		}
+		retryCount++;
 	}
 	function createWebSocket(initial) {
 		var uri = initial ? CHAT_URI : RETRY_URI

@@ -33,6 +33,10 @@ class ChatRoom(name: String, redis: RedisService) {
   
   private val member_key = name + "-members"
   
+  private var local_members = Set.empty[String]
+  private def addLocalMember(user: String) = synchronized(local_members = local_members + user)
+  private def removeLocalMember(user: String) = synchronized(local_members = local_members - user)
+  
   private var closed = false
   def active = !closed
   
@@ -63,6 +67,7 @@ class ChatRoom(name: String, redis: RedisService) {
     } else {
       Logger.info("Join: " + username)
       redis.withClient(_.rpush(member_key, username))
+      addLocalMember(username)
       val in = createIteratee(username)
       (in, channel.out)
     }
@@ -71,6 +76,7 @@ class ChatRoom(name: String, redis: RedisService) {
   def reconnect(username: String): (Iteratee[String,_], Enumerator[String]) = {
     Logger.info("Reconnect: " + username)
     val in = createIteratee(username)
+    addLocalMember(username)
     (in, channel.out)
   }
   
@@ -80,7 +86,10 @@ class ChatRoom(name: String, redis: RedisService) {
         obj.kind match {
           case s if (s == "join" || s == "quit") =>
             val members = getMembers
-            if (members.isEmpty) {
+            if (s == "quit") {
+              removeLocalMember(obj.user)
+            }
+            if (members.isEmpty || local_members.isEmpty) {
               closed = true
               channel.close
             }
@@ -120,6 +129,10 @@ object ChatRoom {
     val in = Done[String,Unit]((),Input.EOF)
     val out =  Enumerator[String](JsObject(Seq("error" -> JsString(msg))).toString).andThen(Enumerator.enumInput(Input.EOF))
     (in, out)
+  }
+  
+  sys.ShutdownHookThread {
+    println("!!!! ShutdownHook !!!!")
   }
 }
 
