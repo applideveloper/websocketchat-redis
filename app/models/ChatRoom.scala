@@ -33,12 +33,8 @@ class ChatRoom(name: String, redis: RedisService) {
   
   private val member_key = name + "-members"
   
-  private var local_members = Set.empty[String]
-  private def addLocalMember(user: String) = synchronized(local_members = local_members + user)
-  private def removeLocalMember(user: String) = synchronized(local_members = local_members - user)
-  
-  private var closed = false
-  def active = !closed
+  private val closer = new Closer(channel.close)
+  def active = !closer.closed
   
   case class Message(kind: String, user: String, message: String, members: Option[List[String]])
   implicit val messageFormat = Json.format[Message]
@@ -58,20 +54,20 @@ class ChatRoom(name: String, redis: RedisService) {
     }.map { _ =>
       redis.withClient(_.lrem(member_key, 1, username))
       channel.send(message("quit", username, "has left the room"))
+      closer.desc
     }
   }
     
   def join(username: String): (Iteratee[String,_], Enumerator[String]) = {
+    Logger.info("Join: " + username)
+    closer.inc
+    
     val members = getMembers
     if (username == "Robot" || members.contains(username)) {
-      if (members.isEmpty || local_members.isEmpty) {
-        close
-      }
+      closer.desc
       ChatRoom.error("This username is already used")
     } else {
-      Logger.info("Join: " + username)
       redis.withClient(_.rpush(member_key, username))
-      addLocalMember(username)
       val in = createIteratee(username)
       (in, channel.out)
     }
@@ -79,12 +75,13 @@ class ChatRoom(name: String, redis: RedisService) {
   
   def reconnect(username: String): (Iteratee[String,_], Enumerator[String]) = {
     Logger.info("Reconnect: " + username)
+    closer.inc
+    
     val in = createIteratee(username)
     val members = getMembers
     if (!members.contains(username)) {
       redis.withClient(_.rpush(member_key, username))
     }
-    addLocalMember(username)
     (in, channel.out)
   }
   
@@ -94,12 +91,6 @@ class ChatRoom(name: String, redis: RedisService) {
         obj.kind match {
           case s if (s == "join" || s == "quit") =>
             val members = getMembers
-            if (s == "quit") {
-              removeLocalMember(obj.user)
-            }
-            if (members.isEmpty || local_members.isEmpty) {
-              close
-            }
             message(obj.kind, obj.user, obj.message, Some("Robot" :: members))
           case _ =>
             msg
@@ -108,11 +99,6 @@ class ChatRoom(name: String, redis: RedisService) {
         Logger.error("Message error: " + errors)
         msg
     }
-  }
-  
-  private def close = {
-    closed = true
-    channel.close
   }
   
   Akka.system.scheduler.schedule(25 seconds, 25 seconds) {
@@ -138,6 +124,7 @@ object ChatRoom {
   }
   
   def error(msg: String): (Iteratee[String,_], Enumerator[String]) = {
+    Logger.info("Can not connect chat room: " + msg)
     val in = Done[String,Unit]((),Input.EOF)
     val out =  Enumerator[String](JsObject(Seq("error" -> JsString(msg))).toString).andThen(Enumerator.enumInput(Input.EOF))
     (in, out)
@@ -148,3 +135,24 @@ object ChatRoom {
   }
 }
 
+class Closer(body: => Any) {
+  private var counter = 0
+  private var active = true
+  
+  def closed = !active
+  def inc = synchronized {
+    if (active) counter += 1
+  }
+  def desc = synchronized {
+    if (active) {
+      if (counter == 0) {
+        throw new IllegalStateException("Counter doesn't incremented.")
+      }
+      counter -= 1
+      if (counter == 0) {
+        active = false
+        body
+      }
+    }
+  }
+}
