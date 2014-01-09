@@ -12,6 +12,7 @@ import play.api.libs.iteratee.Concurrent
 import play.api.libs.concurrent.Akka
 import akka.actor.Props
 import akka.actor.Actor
+import akka.actor.PoisonPill
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
@@ -124,6 +125,7 @@ class PubSubChannel(redis: RedisService, channel: String,
     Logger.info("close: " + channel)
     sub.unsubscribe
     redis.returnClient(sub)
+    pub ! PoisonPill
   }
   
 }

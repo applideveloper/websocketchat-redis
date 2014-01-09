@@ -4,6 +4,7 @@ import akka.actor.ActorRef
 import akka.actor.Actor
 import akka.actor.Props
 import scala.concurrent.duration.DurationInt
+import scala.concurrent.Future
 
 import play.api.Logger
 import play.api.libs.json.Json
@@ -33,8 +34,11 @@ class ChatRoom(name: String, redis: RedisService) {
   
   private val member_key = name + "-members"
   
-  private val closer = new Closer(channel.close)
+  private val closer: Closer = new Closer(this.close)
   def active = !closer.closed
+  
+  def connect = closer.inc
+  def disconnect = closer.desc
   
   case class Message(kind: String, user: String, message: String, members: Option[List[String]])
   implicit val messageFormat = Json.format[Message]
@@ -50,21 +54,22 @@ class ChatRoom(name: String, redis: RedisService) {
   
   private def createIteratee(username: String): Iteratee[String, _] = {
     Iteratee.foreach[String] { msg =>
+      Logger.info("test: " + Thread.currentThread.getName)
       channel.send(msg)
     }.map { _ =>
       redis.withClient(_.lrem(member_key, 1, username))
       channel.send(message("quit", username, "has left the room"))
-      closer.desc
+      ChatRoom.disconnect(name)
     }
   }
     
   def join(username: String): (Iteratee[String,_], Enumerator[String]) = {
     Logger.info("Join: " + username)
-    closer.inc
+    connect
     
     val members = getMembers
     if (username == "Robot" || members.contains(username)) {
-      closer.desc
+      disconnect
       ChatRoom.error("This username is already used")
     } else {
       redis.withClient(_.rpush(member_key, username))
@@ -75,7 +80,7 @@ class ChatRoom(name: String, redis: RedisService) {
   
   def reconnect(username: String): (Iteratee[String,_], Enumerator[String]) = {
     Logger.info("Reconnect: " + username)
-    closer.inc
+    connect
     
     val in = createIteratee(username)
     val members = getMembers
@@ -101,18 +106,66 @@ class ChatRoom(name: String, redis: RedisService) {
     }
   }
   
-  Akka.system.scheduler.schedule(25 seconds, 25 seconds) {
+  val schedule = Akka.system.scheduler.schedule(25 seconds, 25 seconds) {
     if (active) {
       channel.send(message("talk", "Robot", "I'm still alive"))
     }
+  }
+  
+  def close = {
+    channel.close
+    schedule.cancel
   }
 }
 
 object ChatRoom {
   
+  sealed class Msg
+  case class Join(room: String, username: String)
+  case class Reconnect(room: String, username: String)
+  case class Disconnect(room: String)
+  
+  class MyActor extends Actor {
+    def receive = {
+      case Join(room, username) => 
+        val ret = try {
+          get(room).join(username)
+        } catch {
+          case e: Exception =>
+            e.printStackTrace
+            error(e.getMessage)
+        }
+        sender ! ret
+      case Reconnect(room, username) => 
+        val ret = try {
+          get(room).reconnect(username)
+        } catch {
+          case e: Exception =>
+            e.printStackTrace
+            error(e.getMessage)
+        }
+        sender ! ret
+      case Disconnect(room) =>
+        get(room).disconnect
+        sender ! true
+    }
+  }
+  
+  def join(room: String, username: String): Future[(Iteratee[String,_], Enumerator[String])] = {
+    (actor ? Join(room, username)).asInstanceOf[Future[(Iteratee[String,_], Enumerator[String])]]
+  }
+  
+  def reconnect(room: String, username: String): Future[(Iteratee[String,_], Enumerator[String])] = {
+    (actor ? Reconnect(room, username)).asInstanceOf[Future[(Iteratee[String,_], Enumerator[String])]]
+  }
+  
+  def disconnect(room: String) = {
+    actor ! Disconnect(room)
+  }
+  
   var rooms = Map.empty[String, ChatRoom]
   
-  def get(name: String): ChatRoom = {
+  private def get(name: String): ChatRoom = {
     val room = rooms.get(name).filter(_.active)
     room match {
       case Some(x) => x
@@ -130,6 +183,10 @@ object ChatRoom {
     (in, out)
   }
   
+  implicit val timeout = Timeout(5 seconds)
+  
+  val actor = Akka.system.actorOf(Props(new MyActor()))
+  
   sys.ShutdownHookThread {
     println("!!!! ShutdownHook !!!!")
   }
@@ -141,9 +198,11 @@ class Closer(body: => Any) {
   
   def closed = !active
   def inc = synchronized {
+println("Closer#inc")
     if (active) counter += 1
   }
   def desc = synchronized {
+println("Closer#desc")
     if (active) {
       if (counter == 0) {
         throw new IllegalStateException("Counter doesn't incremented.")

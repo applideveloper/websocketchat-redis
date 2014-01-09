@@ -36,24 +36,12 @@ object Application extends Controller {
   /**
    * Handles the chat websocket.
    */
-  def chat(room: String, username: String) = WebSocket.using[String] { request  =>
-    try {
-      ChatRoom.get(room).join(username)
-    } catch {
-      case e: Exception =>
-        e.printStackTrace
-        ChatRoom.error(e.getMessage)
-    }
+  def chat(room: String, username: String) = WebSocket.async[String] { request  =>
+    ChatRoom.join(room, username)
   }
   
-  def reconnect(room: String, username: String) = WebSocket.using[String] { request  =>
-    try {
-      ChatRoom.get(room).reconnect(username)
-    } catch {
-      case e: Exception =>
-        e.printStackTrace
-        ChatRoom.error(e.getMessage)
-    }
+  def reconnect(room: String, username: String) = WebSocket.async[String] { request  =>
+    ChatRoom.reconnect(room, username)
   }
   
   def gc = Action {
