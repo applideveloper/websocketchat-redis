@@ -76,6 +76,10 @@ class ChatRoom(name: String, redis: RedisService) {
   def reconnect(username: String): (Iteratee[String,_], Enumerator[String]) = {
     Logger.info("Reconnect: " + username)
     val in = createIteratee(username)
+    val members = getMembers
+    if (!members.contains(username)) {
+      redis.withClient(_.rpush(member_key, username))
+    }
     addLocalMember(username)
     (in, channel.out)
   }
