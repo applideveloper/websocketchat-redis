@@ -32,16 +32,15 @@ class ChatRoom(name: String, redis: RedisService) {
   val channel = redis.createPubSub(name, receive=this.receive)
   
   private val member_key = name + "-members"
-  var members: List[String] = getMembers
   
   private var closed = false
   def active = !closed
   
-  case class Message(kind: String, user: String, message: String, members: List[String])
+  case class Message(kind: String, user: String, message: String, members: Option[List[String]])
   implicit val messageFormat = Json.format[Message]
   
-  private def message(kind: String, user: String, message: String): String = {
-    val msg = new Message(kind, user, message, "Robot" :: members)
+  private def message(kind: String, user: String, message: String, members: Option[List[String]] = None): String = {
+    val msg = new Message(kind, user, message, members)
     Json.toJson(msg).toString
   }
   
@@ -51,17 +50,7 @@ class ChatRoom(name: String, redis: RedisService) {
   
   private def createIteratee(username: String): Iteratee[String, _] = {
     Iteratee.foreach[String] { msg =>
-      val json = Json.parse(msg)
-      (json \ "text") match {
-        case JsString(x) => 
-          channel.send(message("talk", username, x))
-        case _ =>
-      }
-      (json \ "system") match {
-        case JsString(x) => 
-          Logger.info("system: " + username + " " + x)
-        case _ =>
-      }
+      channel.send(msg)
     }.map { _ =>
       redis.withClient(_.lrem(member_key, 1, username))
       channel.send(message("quit", username, "has left the room"))
@@ -69,13 +58,11 @@ class ChatRoom(name: String, redis: RedisService) {
   }
     
   def join(username: String): (Iteratee[String,_], Enumerator[String]) = {
-    if (username == "Robot" || members.contains(username)) {
+    if (username == "Robot" || getMembers.contains(username)) {
       ChatRoom.error("This username is already used")
     } else {
+      Logger.info("Join: " + username)
       redis.withClient(_.rpush(member_key, username))
-      members = username :: members
-      val msg = message("join", username, "has entered the room")
-      channel.send(msg)
       val in = createIteratee(username)
       (in, channel.out)
     }
@@ -83,10 +70,6 @@ class ChatRoom(name: String, redis: RedisService) {
   
   def reconnect(username: String): (Iteratee[String,_], Enumerator[String]) = {
     Logger.info("Reconnect: " + username)
-    if (!members.contains(username)) {
-      redis.withClient(_.rpush(member_key, username))
-      members = username :: members
-    }
     val in = createIteratee(username)
     (in, channel.out)
   }
@@ -96,12 +79,12 @@ class ChatRoom(name: String, redis: RedisService) {
       case JsSuccess(obj, _) =>
         obj.kind match {
           case s if (s == "join" || s == "quit") =>
-            members = getMembers
+            val members = getMembers
             if (members.isEmpty) {
               closed = true
               channel.close
             }
-            message(obj.kind, obj.user, obj.message)
+            message(obj.kind, obj.user, obj.message, Some("Robot" :: members))
           case _ =>
             msg
         }

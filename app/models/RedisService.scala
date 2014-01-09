@@ -71,7 +71,7 @@ class PubSubChannel(redis: RedisService, channel: String,
   ) {
   
   private val (msgEnumerator, msgChannel) = Concurrent.broadcast[String]
-  private val pub = Akka.system.actorOf(Props(new Publisher()))
+  private val pub = Akka.system.actorOf(Props(new Publisher(redis)))
   private val sub = {
     val client = redis.borrowClient
     client.subscribe(channel)(callback)
@@ -109,21 +109,27 @@ class PubSubChannel(redis: RedisService, channel: String,
   
   def send(msg: String) = {
     Logger.debug("send: " + msg)
-    pub ! msg
+    pub ! Publish(channel, msg)
+  }
+  
+  def send(channel: String, msg: String) = {
+    Logger.debug("send: " + msg)
+    pub ! Publish(channel, msg)
   }
   
   def close = {
     Logger.info("close: " + channel)
-    sub.unsubscribe(channel)
+    sub.unsubscribe
     redis.returnClient(sub)
   }
   
-  class Publisher extends Actor {
-    def receive = {
-      case msg: String =>
-        redis.withClient { _.publish(channel, msg)}
-        sender ! true
-    }
-  }
 }
 
+case class Publish(channel: String, message: String)
+class Publisher(redis: RedisService) extends Actor {
+  def receive = {
+    case Publish(c, m) =>
+      val ret = redis.withClient { _.publish(c, m)}
+      sender ! ret
+  }
+}

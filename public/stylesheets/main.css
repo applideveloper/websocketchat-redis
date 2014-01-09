@@ -110,6 +110,6 @@ body {
     background: #FFC;
 }
 
-.message.join, .message.quit {
+.message.join, .message.quit, .message.reconnect {
     background: #D9E7FB;
 }

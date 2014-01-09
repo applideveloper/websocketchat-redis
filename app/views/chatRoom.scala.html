@@ -29,12 +29,25 @@
     <script type="text/javascript" charset="utf-8">
     
 $(function() {
+	var MAX_RETRY_COUNT = 5,
+	    RETRY_INTERVAL_BASE = 5,
+	    CHAT_URI = "@routes.Application.chat(room, username).webSocketURL()",
+	    RETRY_URI = "@routes.Application.reconnect(room, username).webSocketURL()",
+	    USERNAME = "@username";
+	
+	function Message(kind, message) {
+		this.kind = kind;
+		this.user = USERNAME;
+		this.message = message;
+		
+	}
+	
 	function sendMessage(msg) {
 		if (!msg) {
 			msg = $("#talk").val();
 			$("#talk").val('')
 		}
-		chatSocket.send(JSON.stringify({ "text": msg}));
+		chatSocket.send(JSON.stringify(new Message("talk", msg)));
 	}
 	
 	function receiveEvent(event) {
@@ -59,10 +72,12 @@ $(function() {
 		$('#messages').append(el)
 		
 		// Update the members list
-		$("#members").html('') 
-		$(data.members).each(function() {
-			$("#members").append('<li>' + this + '</li>')
-		})
+		if (data.members) {
+			$("#members").html('') 
+			$(data.members).each(function() {
+				$("#members").append('<li>' + this + '</li>')
+			})
+		}
 	}
 	function handleReturnKey(e) {
 		if(e.charCode == 13 || e.keyCode == 13) {
@@ -71,12 +86,10 @@ $(function() {
 		} 
 	}
 	function openEvent(evt) {
-console.log("open");
 		retryCount = 0;
-		chatSocket.send(JSON.stringify({ "system": "connected"}));
+		chatSocket.send(JSON.stringify(new Message("join", "has entered the room")));
 	}
 	function closeEvent(evt) {
-console.log("close");
 		retryCount++;
 		if (retryCount > 5) {
 			$("#onError span").text("Connection interrupted!")
@@ -86,7 +99,7 @@ console.log("close");
 		}
 	}
 	function createWebSocket(initial) {
-		var uri = initial ? chatUri : retryUri
+		var uri = initial ? CHAT_URI : RETRY_URI
 		var ret = new WebSocket(uri);
 		ret.onopen = openEvent;
 		ret.onmessage = receiveEvent;
@@ -96,9 +109,8 @@ console.log("close");
 	
 	$("#talk").keypress(handleReturnKey)  
 	
-	var chatUri = "@routes.Application.chat(room, username).webSocketURL()",
-		retryUri = "@routes.Application.reconnect(room, username).webSocketURL()",
-		retryCount = 0;
+	var retryCount = 0,
+		msgCount = 0,
 		chatSocket = createWebSocket(true);
 })
 
