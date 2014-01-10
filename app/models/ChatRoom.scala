@@ -202,7 +202,7 @@ object ChatRoom {
   val actor = Akka.system.actorOf(Props(new MyActor()))
   
   sys.ShutdownHookThread {
-    Logger.debug("!!!! ShutdownHook !!!!")
+    println("!!!! ShutdownHook !!!!")
   }
 }
 
