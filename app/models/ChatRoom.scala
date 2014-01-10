@@ -30,6 +30,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 object MyRedisService extends RedisService(Play.configuration.getString("redis.uri").get)
 
 class ChatRoom(name: String, redis: RedisService) {
+  Logger.info("Create ChatRoom: " + name)
   val channel = redis.createPubSub(name, receive=this.receive)
   
   private val member_key = name + "-members"
@@ -54,7 +55,6 @@ class ChatRoom(name: String, redis: RedisService) {
   
   private def createIteratee(username: String): Iteratee[String, _] = {
     Iteratee.foreach[String] { msg =>
-      Logger.info("test: " + Thread.currentThread.getName)
       channel.send(msg)
     }.map { _ =>
       redis.withClient(_.lrem(member_key, 1, username))
@@ -128,6 +128,7 @@ object ChatRoom {
   class MyActor extends Actor {
     def receive = {
       case Join(room, username) => 
+        Logger.debug("actor.Join: " + room + ", " + username)
         val ret = try {
           get(room).join(username)
         } catch {
@@ -137,6 +138,7 @@ object ChatRoom {
         }
         sender ! ret
       case Reconnect(room, username) => 
+        Logger.debug("actor.Reconnect: " + room + ", " + username)
         val ret = try {
           get(room).reconnect(username)
         } catch {
@@ -146,10 +148,22 @@ object ChatRoom {
         }
         sender ! ret
       case Disconnect(room) =>
+        Logger.debug("actor.Disconnect: " + room)
         get(room).disconnect
         sender ! true
     }
+    
+    
+    override def postStop() = {
+      Logger.debug("!!! postStop !!!")
+      rooms.values.filter(_.active).foreach(_.close)
+      rooms = Map.empty[String, ChatRoom]
+      MyRedisService.close
+      super.postStop()
+    }
   }
+  
+
   
   def join(room: String, username: String): Future[(Iteratee[String,_], Enumerator[String])] = {
     (actor ? Join(room, username)).asInstanceOf[Future[(Iteratee[String,_], Enumerator[String])]]
@@ -188,7 +202,7 @@ object ChatRoom {
   val actor = Akka.system.actorOf(Props(new MyActor()))
   
   sys.ShutdownHookThread {
-    println("!!!! ShutdownHook !!!!")
+    Logger.debug("!!!! ShutdownHook !!!!")
   }
 }
 
@@ -198,11 +212,9 @@ class Closer(body: => Any) {
   
   def closed = !active
   def inc = synchronized {
-println("Closer#inc")
     if (active) counter += 1
   }
   def desc = synchronized {
-println("Closer#desc")
     if (active) {
       if (counter == 0) {
         throw new IllegalStateException("Counter doesn't incremented.")

@@ -49,7 +49,7 @@ class RedisService(redisUrl: String) {
   )
   
   private def defaultException: Throwable => Unit = { ex =>
-    Logger.error("Fatal error caused consumer dead. Please init new consumer reconnecting to master or connect to backup", ex)
+    Logger.error("Subscriber error", ex)
   }
   
   private def defaultSubscribe: (String, Int) => Unit = { (c, n) =>
@@ -73,6 +73,9 @@ class PubSubChannel(redis: RedisService, channel: String,
   subscribe: Option[(String, Int) => Unit] = None,
   unsubscribe: Option[(String, Int) => Unit] = None
   ) {
+  
+  @volatile
+  private var unsubscribed = false
   
   private val (msgEnumerator, msgChannel) = Concurrent.broadcast[String]
   private val pub = Akka.system.actorOf(Props(new Publisher(redis)))
@@ -105,6 +108,10 @@ class PubSubChannel(redis: RedisService, channel: String,
       if (no == 0) {
         sub.pubSub = false
       }
+      if (!unsubscribed) {
+        unsubscribed = true
+        redis.returnClient(sub)
+      }  
     case M(channel, msg) => 
       Logger.debug("receive: " + msg)
       val str = receive.map(_(msg)).getOrElse(msg)
@@ -123,8 +130,9 @@ class PubSubChannel(redis: RedisService, channel: String,
   
   def close = {
     Logger.info("close: " + channel)
-    sub.unsubscribe
-    redis.returnClient(sub)
+    if (!unsubscribed) {
+      sub.unsubscribe
+    }
     pub ! PoisonPill
   }
   
