@@ -104,11 +104,15 @@ $(function() {
 		}
 		retryCount++;
 	}
+	function errorEvent(evt) {
+		console.log("error: " + evt);
+	}
 	function createWebSocket(initial) {
 		var uri = initial ? CHAT_URI : RETRY_URI
 		var ret = new WebSocket(uri);
 		ret.onopen = openEvent;
 		ret.onmessage = receiveEvent;
+		ret.onerror = errorEvent;
 		ret.onclose = closeEvent;
 		return ret;
 	}
