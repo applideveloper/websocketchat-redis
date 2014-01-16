@@ -31,8 +31,8 @@
 $(function() {
 	var MAX_RETRY_COUNT = 5,
 	    RETRY_INTERVAL_BASE = 5,
-	    CHAT_URI = "@routes.Application.chat(room, username).webSocketURL()",
-	    RETRY_URI = "@routes.Application.reconnect(room, username).webSocketURL()",
+	    CHAT_URI = "@Html(routes.Application.chat(room, username).webSocketURL())",
+	    RETRY_URI = "@Html(routes.Application.reconnect(room, username).webSocketURL())",
 	    USERNAME = "@username";
 	
 	function Message(kind, message) {
